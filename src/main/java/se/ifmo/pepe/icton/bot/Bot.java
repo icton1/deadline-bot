@@ -10,15 +10,24 @@ import org.telegram.abilitybots.api.objects.Privacy;
 import org.telegram.abilitybots.api.objects.Reply;
 import org.telegram.abilitybots.api.toggle.CustomToggle;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import se.ifmo.pepe.icton.constant.ChatStates;
 import se.ifmo.pepe.icton.constant.Constants;
 import se.ifmo.pepe.icton.factory.KeyboardFactory;
+import se.ifmo.pepe.icton.model.Lab;
 import se.ifmo.pepe.icton.model.Student;
 import se.ifmo.pepe.icton.repository.StudentRepository;
 import se.ifmo.pepe.icton.util.IsuUtils;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.function.Consumer;
 
 @Component
@@ -71,6 +80,8 @@ public class Bot extends AbilityBot {
                                         .setChatId(ctx.chatId())
                                         .setReplyMarkup(KeyboardFactory.createReplyKeyBoard(1, 1, new String[]{"Старт"}, new String[]{"start"}))
                                         .setParseMode("HTML"));
+                                student.setState(ChatStates.INPUT_GROUP);
+                                studentRepository.save(student);
                             } else {
                                 silent.send("Привет, введи свою группу", ctx.chatId());
                                 student.setState(ChatStates.INPUT_GROUP);
@@ -108,14 +119,18 @@ public class Bot extends AbilityBot {
                 case ChatStates.INPUT_GROUP -> {
                     Runnable r = () -> {
                         if (text.matches("[a-zA-Z]\\d{4,6}[a-zA-Z]?")) {
-                            student.setGroup(text);
-                            student.setLabs(IsuUtils.parseSchedule(student.getGroup()));
-                            studentRepository.save(student);
-                            System.out.println(student.getLabs());
-                            silent.execute(new SendMessage()
-                                    .setChatId(chatId)
-                                    .setText(student.labsInfo())
-                                    .setParseMode("HTML"));
+                            if (IsuUtils.parseSchedule(text).size() != 0) {
+                                student.setGroup(text);
+                                student.setLabs(IsuUtils.parseSchedule(text));
+                                studentRepository.save(student);
+                                silent.execute(new SendMessage()
+                                        .setChatId(chatId)
+                                        .setText(student.labsInfo())
+                                        .setParseMode("HTML")
+                                        .setReplyMarkup(KeyboardFactory.createReplyKeyBoard(1, 1, new String[]{"Перейти к настройкам"}, new String[]{"opts"})));
+                            } else
+                                silent.send("Такой группы не существует", chatId);
+
                         } else {
                             silent.send("Невалидный номер группы", chatId);
                         }
@@ -129,6 +144,58 @@ public class Bot extends AbilityBot {
                 && !update.getMessage().isCommand());
     }
 
+    public Reply buttonReply() {
+        Consumer<Update> action = update -> {
+            CallbackQuery callbackQuery = update.getCallbackQuery();
+            String data = callbackQuery.getData();
+            Message msg = callbackQuery.getMessage();
+            int userId = callbackQuery.getFrom().getId();
+            long chatId = msg.getChatId();
+            int msgId = msg.getMessageId();
+            Student student = studentRepository.findById((long) userId).get();
+            final Integer state = student.getState();
+            switch (data) {
+                case "start" -> {
+                    Runnable r = () -> {
+                        hideReplyMarkup(msgId, chatId);
+                        if (IsuUtils.parseSchedule(student.getGroup()).size() != 0) {
+                            student.setLabs(IsuUtils.parseSchedule(student.getGroup()));
+                            studentRepository.save(student);
+                            silent.execute(new SendMessage()
+                                    .setChatId(chatId)
+                                    .setText(student.labsInfo())
+                                    .setParseMode("HTML")
+                                    .setReplyMarkup(KeyboardFactory.createReplyKeyBoard(1, 1,
+                                            new String[]{"Перейти к настройкам"}, new String[]{"opts"})));
+                        } else
+                            silent.send("Такой группы не существует", chatId);
+
+                    };
+                    new Thread(r).start();
+                }
+                case "opts" -> {
+                    Runnable r = () -> {
+                        hideReplyMarkup(msgId, chatId);
+                        openOptions(student, msgId, 0);
+                        student.setState(ChatStates.OPTIONS);
+                        studentRepository.save(student);
+                    };
+                    new Thread(r).start();
+                }
+            }
+            switch (state) {
+                case ChatStates.OPTIONS -> {
+                    if (data.contains("#")) {
+                            openOptions(student, msgId, Integer.parseInt(data.substring(1)));
+                    } else if (data.contains("this_")) {
+
+                    }
+                }
+            }
+
+        };
+        return Reply.of(action, Update::hasCallbackQuery);
+    }
     /*
      * * REPLIES END * *
      */
@@ -140,6 +207,68 @@ public class Bot extends AbilityBot {
     /*
      * * UTILITIES START * *
      */
+
+    public void openOptions(Student student, int msgId, int index) {
+        Runnable r = () -> {
+            ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
+            List<List<InlineKeyboardButton>> keyboard = null;
+            if (labs.size() > 1) {
+                if (index == 0)
+                    keyboard = KeyboardFactory.createRawReplyKeyBoard(3, 2,
+                            new String[]{"Настроить", ">>", "Готово"},
+                            new String[]{"this_" + index, "#" + (index + 1), "done"});
+                else if (index < labs.size() - 1)
+                    keyboard = KeyboardFactory.createRawReplyKeyBoard(4, 2,
+                            new String[]{"<<", ">>", "Настроить", "Готово"},
+                            new String[]{"#" + (index - 1), "#" + (index + 1), "this_" + index, "done"});
+                else if (index == labs.size() - 1)
+                    keyboard = KeyboardFactory.createRawReplyKeyBoard(3, 2,
+                            new String[]{"<<", "Настроить", "Готово"},
+                            new String[]{"#" + (index - 1), "this_" + index, "done"});
+            } else {
+                keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
+                        new String[]{"Настроить", "Готово"},
+                        new String[]{"this_" + index, "done"});
+            }
+            silent.execute(new EditMessageText()
+                    .setMessageId(msgId)
+                    .setText(student.labInfo(labs.get(index)))
+                    .setChatId(student.getUserId())
+                    .setParseMode("HTML")
+                    .setReplyMarkup(new InlineKeyboardMarkup()
+                            .setKeyboard(keyboard))
+            );
+        };
+        new Thread(r).start();
+
+    }
+
+    public void showOptionsForParticularLab(Student student, int msgId, int index) {
+        ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
+        List<List<InlineKeyboardButton>> keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
+                new String[]{"Настроить", "Готово"},
+                new String[]{"this_" + index, "done"});
+        silent.execute(new EditMessageText()
+                .setMessageId(msgId)
+                .setText(student.labInfo(labs.get(index)))
+                .setChatId(student.getUserId())
+                .setParseMode("HTML")
+                .setReplyMarkup(new InlineKeyboardMarkup()
+                        .setKeyboard(keyboard))
+        );
+    }
+
+    public void sendLabNotification(Lab lab, HashMap<String, String> options) {
+        //TODO: notification
+    }
+
+    private void hideReplyMarkup(int messageId, long chatId) {
+        EditMessageReplyMarkup ed = new EditMessageReplyMarkup();
+        silent.execute(ed
+                .setChatId(chatId)
+                .setMessageId(messageId)
+                .setReplyMarkup(null));
+    }
 
     /*
      * * UTILITIES END * *

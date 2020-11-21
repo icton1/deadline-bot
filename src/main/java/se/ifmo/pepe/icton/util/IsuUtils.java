@@ -6,23 +6,20 @@ import org.jsoup.nodes.Document;
 import se.ifmo.pepe.icton.model.Lab;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 
 
 public class IsuUtils {
 
     @SneakyThrows
-    public static Set<Lab> parseSchedule(String group)  {
+    public static Map<Lab, Lab> parseSchedule(String group)  {
         String url = String.format("https://itmo.ru/ru/schedule/0/%s/schedule.htm", group);
         Document doc = Jsoup
                 .connect(url)
                 .get();
 
-        Set<Lab> labSet = new HashSet<>();
+        Map<Lab, Lab> map = new HashMap<>();
         doc.body().getElementsByTag("table").forEach(element -> {
             if (element.toString().contains("Лаб")) {
                 int j = 0;
@@ -44,17 +41,15 @@ public class IsuUtils {
                             .setWeek(week);
                     i += 3;
                     j += 4;
-                    if (labSet.contains(lab))
-                        labSet.forEach(l -> {
-                            if (l.equals(lab)) l.setFrequency(l.getFrequency() + 1);
-                        });
+                    if (map.containsKey(lab))
+                        map.get(lab).setFrequency(map.get(lab).getFrequency() + 1);
                     else
-                        labSet.add(lab);
+                        map.put(lab, lab);
 
                 }
 
             }
         });
-        return labSet;
+        return map;
     }
 }

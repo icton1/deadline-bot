@@ -31,7 +31,7 @@ public class Student implements Serializable {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "lab_info")
-    private Set<Lab> labs = new HashSet<>();
+    private Map<Lab, Lab> labs = new HashMap<>();
 
     /*
      * * FLUENT(BUILDER) SETTERS * *
@@ -57,14 +57,14 @@ public class Student implements Serializable {
         return this;
     }
 
-    public Student setLabs(Set<Lab> labs) {
+    public Student setLabs(Map<Lab, Lab> labs) {
         this.labs = labs;
         return this;
     }
 
     public String labsInfo() {
         StringBuilder sb = new StringBuilder();
-        this.labs.forEach(lab ->
+        this.labs.forEach((k,lab) ->
                 sb.append(String.format(
                         "<b>Название: </b> %s\n" +
                                 "<b>Неделя: </b> %s\n" +
@@ -75,6 +75,18 @@ public class Student implements Serializable {
                         resolveWeekday(lab.getWeekday()),
                         resolveEstimatedDays(lab.getFrequency()))));
         return sb.toString();
+    }
+
+    public String labInfo(Lab lab) {
+        return String.format(
+                "<b>Название: </b> %s\n" +
+                        "<b>Неделя: </b> %s\n" +
+                        "<b>День недели: </b> %s\n" +
+                        "<b>Осталось до конца семестра:</b> %s\n\n",
+                lab.getName(),
+                resolveWeek(lab.getWeek()),
+                resolveWeekday(lab.getWeekday()),
+                resolveEstimatedDays(lab.getFrequency()));
     }
 
     private String resolveWeek(Integer week) {
