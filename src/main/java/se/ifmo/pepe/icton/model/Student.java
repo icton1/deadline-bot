@@ -66,9 +66,9 @@ public class Student implements Serializable {
         StringBuilder sb = new StringBuilder();
         this.labs.forEach((k,lab) ->
                 sb.append(String.format(
-                        "<b>Название: </b> %s\n" +
-                                "<b>Неделя: </b> %s\n" +
-                                "<b>День недели: </b> %s\n" +
+                        "<b>Название:</b> %s\n" +
+                                "<b>Неделя:</b> %s\n" +
+                                "<b>День недели:</b> %s\n" +
                                 "<b>Осталось до конца семестра:</b> %s\n\n",
                         lab.getName(),
                         resolveWeek(lab.getWeek()),
@@ -79,9 +79,9 @@ public class Student implements Serializable {
 
     public String labInfo(Lab lab) {
         return String.format(
-                "<b>Название: </b> %s\n" +
-                        "<b>Неделя: </b> %s\n" +
-                        "<b>День недели: </b> %s\n" +
+                "<b>Название:</b> %s\n" +
+                        "<b>Неделя:</b> %s\n" +
+                        "<b>День недели:</b> %s\n" +
                         "<b>Осталось до конца семестра:</b> %s\n\n",
                 lab.getName(),
                 resolveWeek(lab.getWeek()),
@@ -150,4 +150,6 @@ public class Student implements Serializable {
         else
             return ((Math.abs(today.get(Calendar.DAY_OF_YEAR) - first_sem.get(Calendar.DAY_OF_YEAR)) / 7) / 2 / frequency);
     }
+
+
 }

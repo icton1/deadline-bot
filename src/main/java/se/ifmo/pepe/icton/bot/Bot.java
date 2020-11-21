@@ -80,14 +80,32 @@ public class Bot extends AbilityBot {
                                         .setChatId(ctx.chatId())
                                         .setReplyMarkup(KeyboardFactory.createReplyKeyBoard(1, 1, new String[]{"Старт"}, new String[]{"start"}))
                                         .setParseMode("HTML"));
-                                student.setState(ChatStates.INPUT_GROUP);
-                                studentRepository.save(student);
                             } else {
                                 silent.send("Привет, введи свою группу", ctx.chatId());
-                                student.setState(ChatStates.INPUT_GROUP);
-                                studentRepository.save(student);
                             }
+                            student.setState(ChatStates.INPUT_GROUP);
+                            studentRepository.save(student);
                         }
+                    }).start();
+                })
+                .build();
+    }
+
+    public Ability menuAbility() {
+        return Ability.builder()
+                .name("menu")
+                .input(0)
+                .locality(Locality.USER)
+                .privacy(Privacy.PUBLIC)
+                .action(ctx -> {
+                    new Thread(() -> {
+                        Runnable r = () -> {
+                            Student student = studentRepository.findById(ctx.chatId()).get();
+                            openOptions(student, Math.toIntExact(ctx.chatId()), 0, true);
+                            student.setState(ChatStates.OPTIONS);
+                            studentRepository.save(student);
+                        };
+                        new Thread(r).start();
                     }).start();
                 })
                 .build();
@@ -176,7 +194,7 @@ public class Bot extends AbilityBot {
                 case "opts" -> {
                     Runnable r = () -> {
                         hideReplyMarkup(msgId, chatId);
-                        openOptions(student, msgId, 0);
+                        openOptions(student, msgId, 0, false);
                         student.setState(ChatStates.OPTIONS);
                         studentRepository.save(student);
                     };
@@ -186,9 +204,28 @@ public class Bot extends AbilityBot {
             switch (state) {
                 case ChatStates.OPTIONS -> {
                     if (data.contains("#")) {
-                            openOptions(student, msgId, Integer.parseInt(data.substring(1)));
+                        openOptions(student, msgId, Integer.parseInt(data.substring(1)), false);
                     } else if (data.contains("this_")) {
-
+                        showOptionsForParticularLab(student, msgId, Integer.parseInt(data.substring(5)));
+                    } else if (data.contains("mode_")) {
+                        changeNotificationMode(student, msgId, Integer.parseInt(data.substring(5)));
+                    } else if (data.contains("m_")) {
+                        applyNotificationModeToParticularLab(student, Integer.parseInt(data.substring(4)),
+                                Integer.parseInt(data.substring(2, 3)), msgId);
+                    } else if (data.contains("back_")) {
+                        openOptions(student, msgId, Integer.parseInt(data.substring(5)), false);
+                    } else if (data.equals("done")) {
+                        hideReplyMarkup(msgId, chatId);
+                        silent.execute(new SendMessage()
+                                .setText("Отлично, настройки применены." +
+                                        "\n\n" +
+                                        "Чтобы изменить настройки введи <b>/menu</b>" +
+                                        "\n" +
+                                        "Чтобы сбросить настройки введи <b>/start</b>")
+                                .setParseMode("HTML")
+                                .setChatId(chatId));
+                    } else if (data.contains("cancel_")) {
+                        showOptionsForParticularLab(student, msgId, Integer.parseInt(data.substring(7)));
                     }
                 }
             }
@@ -208,7 +245,7 @@ public class Bot extends AbilityBot {
      * * UTILITIES START * *
      */
 
-    public void openOptions(Student student, int msgId, int index) {
+    public void openOptions(Student student, int msgId, int index, boolean fromCmd) {
         Runnable r = () -> {
             ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
             List<List<InlineKeyboardButton>> keyboard = null;
@@ -230,9 +267,47 @@ public class Bot extends AbilityBot {
                         new String[]{"Настроить", "Готово"},
                         new String[]{"this_" + index, "done"});
             }
+            String messageText = String.format(
+                    "%s" + "%s",
+                    student.labInfo(labs.get(index)),
+                    labs.get(index).showPossibleFeatures()
+            );
+            if (fromCmd)
+                silent.execute(new SendMessage()
+                        .setChatId((long) msgId)
+                        .setText(messageText)
+                        .setParseMode("HTML")
+                        .setReplyMarkup(new InlineKeyboardMarkup()
+                                .setKeyboard(keyboard)));
+            else
+                silent.execute(new EditMessageText()
+                        .setMessageId(msgId)
+                        .setText(messageText)
+                        .setChatId(student.getUserId())
+                        .setParseMode("HTML")
+                        .setReplyMarkup(new InlineKeyboardMarkup()
+                                .setKeyboard(keyboard))
+                );
+        };
+        new Thread(r).start();
+
+    }
+
+    public void showOptionsForParticularLab(Student student, int msgId, int index) {
+        Runnable r = () -> {
+            ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
+            List<List<InlineKeyboardButton>> keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
+                    new String[]{"Выбрать режим отправки", "Назад"},
+                    new String[]{"mode_" + index, "back_" + index}
+            );
+            String messageText = String.format(
+                    "%s" + "%s",
+                    student.labInfo(labs.get(index)),
+                    labs.get(index).showPossibleFeatures()
+            );
             silent.execute(new EditMessageText()
                     .setMessageId(msgId)
-                    .setText(student.labInfo(labs.get(index)))
+                    .setText(messageText)
                     .setChatId(student.getUserId())
                     .setParseMode("HTML")
                     .setReplyMarkup(new InlineKeyboardMarkup()
@@ -240,22 +315,43 @@ public class Bot extends AbilityBot {
             );
         };
         new Thread(r).start();
-
     }
 
-    public void showOptionsForParticularLab(Student student, int msgId, int index) {
-        ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
-        List<List<InlineKeyboardButton>> keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
-                new String[]{"Настроить", "Готово"},
-                new String[]{"this_" + index, "done"});
-        silent.execute(new EditMessageText()
-                .setMessageId(msgId)
-                .setText(student.labInfo(labs.get(index)))
-                .setChatId(student.getUserId())
-                .setParseMode("HTML")
-                .setReplyMarkup(new InlineKeyboardMarkup()
-                        .setKeyboard(keyboard))
-        );
+    public void changeNotificationMode(Student student, int msgId, int index) {
+        Runnable r = () -> {
+            List<List<InlineKeyboardButton>> keyboard = KeyboardFactory.createRawReplyKeyBoard(4, 4,
+                    new String[]{"1 раз в неделю",
+                            "1 раз в две недели",
+                            "Каждый день",
+                            "Отмена"},
+                    new String[]{"m_1_" + index,
+                            "m_2_" + index,
+                            "m_3_" + index,
+                            "cancel_" + index}
+            );
+            silent.execute(new EditMessageText()
+                    .setMessageId(msgId)
+                    .setText("Выбери режим отправки")
+                    .setChatId(student.getUserId())
+                    .setParseMode("HTML")
+                    .setReplyMarkup(new InlineKeyboardMarkup()
+                            .setKeyboard(keyboard))
+            );
+        };
+        new Thread(r).start();
+    }
+
+    public void applyNotificationModeToParticularLab(Student student, int index, int mode, int mshId) {
+        Runnable r = () -> {
+            ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
+            Lab lab = labs.get(index);
+            lab.setMode(mode);
+            lab.setNotificationIsOn(true);
+            student.getLabs().replace(labs.get(index), lab);
+            studentRepository.save(student);
+            showOptionsForParticularLab(student, mshId, index);
+        };
+        new Thread(r).start();
     }
 
     public void sendLabNotification(Lab lab, HashMap<String, String> options) {
