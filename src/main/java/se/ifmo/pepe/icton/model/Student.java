@@ -11,7 +11,6 @@ import java.util.*;
 @Entity
 @Table(name = "students")
 public class Student implements Serializable {
-
     @Id
     @Column(name = "user_id")
     private Long userId;
@@ -21,13 +20,6 @@ public class Student implements Serializable {
 
     @Column(name = "stud_group")
     private String group = null;
-
-    @ElementCollection
-    @CollectionTable(name = "options_mapping",
-            joinColumns = {@JoinColumn(name = "order_id", referencedColumnName = "user_id")})
-    @MapKeyColumn(name = "option_name")
-    @Column(name = "opt")
-    private Map<String, String> options = new HashMap<>();
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "lab_info")
@@ -49,11 +41,6 @@ public class Student implements Serializable {
 
     public Student setGroup(String group) {
         this.group = group;
-        return this;
-    }
-
-    public Student setOptions(Map<String, String> options) {
-        this.options = options;
         return this;
     }
 
@@ -132,7 +119,7 @@ public class Student implements Serializable {
         }
     }
 
-    private int resolveEstimatedDays(Integer frequency) {
+    public int resolveEstimatedDays(Integer frequency) {
         Calendar today = Calendar.getInstance();
         int year = today.get(Calendar.YEAR);
         GregorianCalendar first_sem = new GregorianCalendar();

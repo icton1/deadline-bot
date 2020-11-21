@@ -1,7 +1,9 @@
 package se.ifmo.pepe.icton.bot;
 
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.telegram.abilitybots.api.bot.AbilityBot;
 import org.telegram.abilitybots.api.objects.Ability;
@@ -25,9 +27,7 @@ import se.ifmo.pepe.icton.model.Student;
 import se.ifmo.pepe.icton.repository.StudentRepository;
 import se.ifmo.pepe.icton.util.IsuUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.function.Consumer;
 
 @Component
@@ -114,8 +114,6 @@ public class Bot extends AbilityBot {
     /*
      * * ABILITIES END * *
      */
-
-
 
 
     /*
@@ -237,10 +235,6 @@ public class Bot extends AbilityBot {
      * * REPLIES END * *
      */
 
-
-
-
-
     /*
      * * UTILITIES START * *
      */
@@ -348,22 +342,122 @@ public class Bot extends AbilityBot {
             lab.setMode(mode);
             lab.setNotificationIsOn(true);
             student.getLabs().replace(labs.get(index), lab);
+            lab.setSendDate(calculateDateForNotification(lab, student));
             studentRepository.save(student);
             showOptionsForParticularLab(student, mshId, index);
         };
         new Thread(r).start();
     }
 
-    public void sendLabNotification(Lab lab, HashMap<String, String> options) {
-        //TODO: notification
+    @Scheduled(fixedRate = 1000)
+    public void sendLabNotification() {
+        Runnable r = () -> {
+            Iterable<Student> students = studentRepository.findAll();
+            TreeSet<Lab> labs = new TreeSet<>();
+            students.forEach(s -> {
+                s.getLabs().forEach((k, v) -> {
+                    if (v.getSendDate() != null) {
+                        if (v.getNotificationIsOn()) {
+                            v.setChatId(s.getUserId());
+                            labs.add(v);
+                        }
+                    }
+                });
+            });
+            students.forEach(s -> {
+                Map<Lab, Lab> futureLabs = new HashMap<>(s.getLabs());
+                futureLabs.forEach((k, v) -> {
+                    
+                });
+            });
+            if (!labs.isEmpty()) {
+                Lab lab = labs.stream()
+                        .filter(l -> new Date().compareTo(l.getSendDate()) >= 0)
+                        .findFirst().orElseThrow();
+                silent.send("Уведомление", lab.getChatId());
+                labs.remove(lab);
+            }
+        };
+        new Thread(r).start();
+    }
+
+
+    private Date recalculateDateForNotification(Lab lab, Student student) {
+        Calendar today = Calendar.getInstance();
+        int tomorrow = today.get(Calendar.DAY_OF_MONTH) + 1;
+        int currentWeekOFYear = today.get(Calendar.WEEK_OF_YEAR);
+        if (lab.getNotificationIsOn() || student.resolveEstimatedDays(lab.getFrequency()) > 0) {
+            switch (lab.getModeCode()) {
+                case 1 -> {
+                    return getWeekDateForParticularLab(lab, currentWeekOFYear + 1);
+                }
+                case 2 -> {
+                    if (currentWeekOFYear % 2 != lab.getWeek()) {
+                        currentWeekOFYear += 1;
+                    }
+                    return getWeekDateForParticularLab(lab, currentWeekOFYear + 1);
+                }
+                case 3 -> {
+                    today.set(Calendar.DAY_OF_MONTH, 22);
+                    today.set(Calendar.HOUR, 1);
+                    today.set(Calendar.MINUTE, 42);
+                    today.set(Calendar.SECOND, 0);
+                    return today.getTime();
+                }
+            }
+        }
+        return null;
+    }
+
+
+    private Date calculateDateForNotification(Lab lab, Student student) {
+        Calendar today = Calendar.getInstance();
+        int tomorrow = today.get(Calendar.DAY_OF_MONTH) + 1;
+        int currentWeekOFYear = today.get(Calendar.WEEK_OF_YEAR);
+        if (lab.getNotificationIsOn() || student.resolveEstimatedDays(lab.getFrequency()) > 0) {
+            switch (lab.getModeCode()) {
+                case 1 -> {
+                    return getWeekDateForParticularLab(lab, currentWeekOFYear);
+                }
+                case 2 -> {
+                    if (currentWeekOFYear % 2 != lab.getWeek()) {
+                        currentWeekOFYear += 1;
+                    }
+                    return getWeekDateForParticularLab(lab, currentWeekOFYear);
+                }
+                case 3 -> {
+                    today.set(Calendar.DAY_OF_MONTH, 22);
+                    today.set(Calendar.HOUR, 1);
+                    today.set(Calendar.MINUTE, 43);
+                    today.set(Calendar.SECOND, 0);
+                    return today.getTime();
+                }
+            }
+        }
+        return null;
+    }
+
+    @NotNull
+    private Date getWeekDateForParticularLab(Lab lab, int currentWeekOFYear) {
+        Date desiredDate;
+        Calendar cal = Calendar.getInstance();
+        int weekday = lab.getWeekday() + 1 > 7 ? 1 : lab.getWeekday() + 1;
+        cal.setWeekDate(cal.get(Calendar.YEAR), currentWeekOFYear, weekday - 3 <= 0 ? 7 - Math.abs(weekday - 3) : weekday - 3);
+        cal.set(Calendar.HOUR, 12);
+        cal.set(Calendar.MINUTE, 0);
+        desiredDate = cal.getTime();
+        return desiredDate;
     }
 
     private void hideReplyMarkup(int messageId, long chatId) {
-        EditMessageReplyMarkup ed = new EditMessageReplyMarkup();
-        silent.execute(ed
-                .setChatId(chatId)
-                .setMessageId(messageId)
-                .setReplyMarkup(null));
+        Runnable r = () -> {
+            EditMessageReplyMarkup ed = new EditMessageReplyMarkup();
+            silent.execute(ed
+                    .setChatId(chatId)
+                    .setMessageId(messageId)
+                    .setReplyMarkup(null));
+        };
+        new Thread(r).start();
     }
 
     /*
