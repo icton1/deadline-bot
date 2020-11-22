@@ -62,7 +62,7 @@ public class Lab implements Serializable, Comparable<Lab> {
                 return "Каждый день";
             }
             default -> {
-                return "Не указано";
+                return String.valueOf(Emoji.CROSS_MARK);
             }
         }
     }

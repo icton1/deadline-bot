@@ -21,6 +21,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import se.ifmo.pepe.icton.constant.ChatStates;
 import se.ifmo.pepe.icton.constant.Constants;
+import se.ifmo.pepe.icton.constant.Emoji;
 import se.ifmo.pepe.icton.factory.KeyboardFactory;
 import se.ifmo.pepe.icton.model.Lab;
 import se.ifmo.pepe.icton.model.Student;
@@ -224,6 +225,15 @@ public class Bot extends AbilityBot {
                                 .setChatId(chatId));
                     } else if (data.contains("cancel_")) {
                         showOptionsForParticularLab(student, msgId, Integer.parseInt(data.substring(7)));
+                    } else if (data.contains("off_")) {
+                        ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
+                        Lab lab = labs.get(Integer.parseInt(data.substring(4)));
+                        lab.setSendDate(null);
+                        lab.setNotificationIsOn(false);
+                        lab.setMode(0);
+                        student.getLabs().replace(labs.get(Integer.parseInt(data.substring(4))), lab);
+                        studentRepository.save(student);
+                        showOptionsForParticularLab(student, msgId, Integer.parseInt(data.substring(4)));
                     }
                 }
             }
@@ -290,10 +300,18 @@ public class Bot extends AbilityBot {
     public void showOptionsForParticularLab(Student student, int msgId, int index) {
         Runnable r = () -> {
             ArrayList<Lab> labs = new ArrayList<>(student.getLabs().values());
-            List<List<InlineKeyboardButton>> keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
-                    new String[]{"Выбрать режим отправки", "Назад"},
-                    new String[]{"mode_" + index, "back_" + index}
-            );
+            List<List<InlineKeyboardButton>> keyboard;
+            if (labs.get(index).getNotificationIsOn()) {
+                keyboard = KeyboardFactory.createRawReplyKeyBoard(3, 3,
+                        new String[]{"Выбрать режим отправки", "Отключить уведомления", "Назад"},
+                        new String[]{"mode_" + index, "off_" + index, "back_" + index}
+                );
+            } else {
+                keyboard = KeyboardFactory.createRawReplyKeyBoard(2, 2,
+                        new String[]{"Выбрать режим отправки", "Назад"},
+                        new String[]{"mode_" + index, "back_" + index}
+                );
+            }
             String messageText = String.format(
                     "%s" + "%s",
                     student.labInfo(labs.get(index)),
@@ -349,11 +367,12 @@ public class Bot extends AbilityBot {
         new Thread(r).start();
     }
 
-    @Scheduled(fixedRate = 1000)
+    @Scheduled(cron = "0 0 12 * * ?")
     public void sendLabNotification() {
         Runnable r = () -> {
             Iterable<Student> students = studentRepository.findAll();
-            TreeSet<Lab> labs = new TreeSet<>();
+            ArrayList<Lab> labs = new ArrayList<>();
+            ArrayList<Lab> set = new ArrayList<>();
             students.forEach(s -> {
                 s.getLabs().forEach((k, v) -> {
                     if (v.getSendDate() != null) {
@@ -364,51 +383,29 @@ public class Bot extends AbilityBot {
                     }
                 });
             });
+            if (!labs.isEmpty())
+                for (Lab l : labs) {
+                    if (new Date().after(l.getSendDate()))
+                        set.add(l);
+                }
+
+            if (!set.isEmpty())
+                set.forEach(l -> silent.send(String.format("%s Пора делать лабу по предмету \"%s\"",
+                        Emoji.HEAVY_EXCLAMATION_MARK_SYMBOL ,l.getName().substring(0, l.getName().length() - 5)), l.getChatId()));
+
+            labs.clear();
+            set.clear();
             students.forEach(s -> {
                 Map<Lab, Lab> futureLabs = new HashMap<>(s.getLabs());
                 futureLabs.forEach((k, v) -> {
-                    
+                    v.setSendDate(calculateDateForNotification(v, s));
+                    futureLabs.replace(k, v);
                 });
+                studentRepository.save(s);
             });
-            if (!labs.isEmpty()) {
-                Lab lab = labs.stream()
-                        .filter(l -> new Date().compareTo(l.getSendDate()) >= 0)
-                        .findFirst().orElseThrow();
-                silent.send("Уведомление", lab.getChatId());
-                labs.remove(lab);
-            }
         };
         new Thread(r).start();
     }
-
-
-    private Date recalculateDateForNotification(Lab lab, Student student) {
-        Calendar today = Calendar.getInstance();
-        int tomorrow = today.get(Calendar.DAY_OF_MONTH) + 1;
-        int currentWeekOFYear = today.get(Calendar.WEEK_OF_YEAR);
-        if (lab.getNotificationIsOn() || student.resolveEstimatedDays(lab.getFrequency()) > 0) {
-            switch (lab.getModeCode()) {
-                case 1 -> {
-                    return getWeekDateForParticularLab(lab, currentWeekOFYear + 1);
-                }
-                case 2 -> {
-                    if (currentWeekOFYear % 2 != lab.getWeek()) {
-                        currentWeekOFYear += 1;
-                    }
-                    return getWeekDateForParticularLab(lab, currentWeekOFYear + 1);
-                }
-                case 3 -> {
-                    today.set(Calendar.DAY_OF_MONTH, 22);
-                    today.set(Calendar.HOUR, 1);
-                    today.set(Calendar.MINUTE, 42);
-                    today.set(Calendar.SECOND, 0);
-                    return today.getTime();
-                }
-            }
-        }
-        return null;
-    }
-
 
     private Date calculateDateForNotification(Lab lab, Student student) {
         Calendar today = Calendar.getInstance();
@@ -426,9 +423,9 @@ public class Bot extends AbilityBot {
                     return getWeekDateForParticularLab(lab, currentWeekOFYear);
                 }
                 case 3 -> {
-                    today.set(Calendar.DAY_OF_MONTH, 22);
-                    today.set(Calendar.HOUR, 1);
-                    today.set(Calendar.MINUTE, 43);
+                    today.set(Calendar.DAY_OF_MONTH, tomorrow);
+                    today.set(Calendar.HOUR, 12);
+                    today.set(Calendar.MINUTE, 0);
                     today.set(Calendar.SECOND, 0);
                     return today.getTime();
                 }
